@@ -1,29 +1,86 @@
 ---
-title: "Fish States"
-author: "Aaron Ferrucci"
-date: "May 22, 2020"
-output: html_document
+title: "Something's Fishy"
+output:
+  html_document:
+    df_print: paged
+knit: (function(input_file, encoding) {
+  out_dir <- 'docs';
+  rmarkdown::render(input_file,
+ encoding=encoding,
+ output_file=file.path(dirname(input_file), out_dir, 'index.html'))})
 ---
+
+```{r message=F, warning=F, echo=F}
+library(dplyr)
+```
+
+From [538 Riddler: Can You Find The Fish In State Names?](https://fivethirtyeight.com/features/somethings-fishy-in-the-state-of-the-riddler/)
+
+> From Mark Bradwin comes a fishy puzzle about state names:
+> 
+> Ohio is the only state whose name doesn’t share any letters with the 
+> word “mackerel.” It’s strange, but it’s true.
+> 
+> But that isn’t the only pairing of a state and a word you can say that 
+> about — it’s not even the only fish! Kentucky has “goldfish” to itself,
+> Montana has “jellyfish” and Delaware has “monkfish,” just to name a few.
+> 
+> What is the longest “mackerel?” That is, what is the longest word that 
+> doesn’t share any letters with exactly one state? (If multiple “mackerels” 
+> are tied for being the longest, can you find them all?)
+> 
+> Extra credit: Which state has the most “mackerels?” That is, which state 
+> has the most words for which it is the only state without any letters 
+> in common with those words?
+> 
+> (For both the Riddler and the extra credit, please refer to Friend of 
+> the Riddler™ Peter Norvig’s [word list](https://norvig.com/ngrams/word.list).)
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
+
+First things first: I'll grab Peter Norvig's word list and derive some useful information from it. I don't want to hammer norvig.com too much during development, so I'll cache the word list locally.
 
 ```{r}
 if (!file.exists("words.csv")) {
   words <- read.table("https://norvig.com/ngrams/word.list", stringsAsFactors = F)
   names(words) <- c("word")
   words$length <- nchar(words$word)
+  # For an optimization, I could throw away words shorter than "mackerel", but... 
+  # I need them for the extra credit question. 
+
+  # The words are in alphabetical order; sort by length instead.
+  words <- words[order(words$length, decreasing=T),]
   write.table(words, "words.csv")
 }
 words <- read.table("words.csv", stringsAsFactors=F)
-words <- words[words$length > 7,]
-words <- words[order(words$length, decreasing=T),]
+
 str(words)
 ```
 
+Along with all the words, I need all the state names. I made myself a list of the 50 states, all lower case.
+
 ```{r}
-bitmasks <- sapply(1:26, function(x) 2**(x-1))
+states <- read.table("states.csv", stringsAsFactors=F, sep="\n")
+names(states) <- c("state")
+str(states)
+```
+
+Now for some coding. I'll be asking this question: "does word W have any letters in common with state S?". For example, "mackerel" has no letters in common with "ohio", but it has letters in common with maine, michigan, montana... and every other state. I'll take advantage of the fact that repeated letters, and letter order don't matter - that is, "does 'aceklmr' have any letters in common with 'hio'?" is really the same question. For common-letter testing, I'll encode each word and state as a vector of 26 bits, with '1' meaning "letter is present". Then I can use bitwise AND to detect common letters. If the compiler is smart, these operations should be efficient.
+
+Here's a utility function to encode a string of letters.
+
+```{r}
+# encode each letter as a binary number with only one bit set.
+# fortunately there are fewer than 33 letters, so all the encodings will fit in a 32-bit word.
+bitmasks <- sapply(1:26, function(x) as.integer(2**(x-1)))
+# each word is encoded as a binary number with a bit set to 1 only if a letter is present.
+# examples:
+#  "a" is encoded as 1
+#  "ab" is encoded as 3
+# "zebra" is encoded as 0x2020013
+# note: encodings are not unique! That is, many words can share the same encoding, like "stars" and "rats"
 encode <- function(word) {
   # list of characters
   chs <- strsplit(word, "")[[1]]
@@ -37,31 +94,19 @@ encode <- function(word) {
   onehots <- bitmasks[indices]
   # they're unique, so OR them by adding
   code <- sum(onehots)
-  return(code)
+  # a sum of integers might exceed integer range - but I know it won't. Cast to int for efficiency.
+  return(as.integer(code))
 } 
 ```
 
-```{r}
-words$code <- sapply(words$word, encode)
-```
+Now I'll augment my data sets with encodings for each word and state. With around 260,000 words in the list, I worried that this step would be very time consuming, but it only takes a few seconds.
 
 ```{r}
-states <- read.table("states.csv", stringsAsFactors=F, sep="\n")
-names(states) <- c("state")
+words$code <- sapply(words$word, encode)
 states$code <- sapply(states$state, encode)
 ```
 
-```{r}
-code <- words[words$word == "mackerel", "code"]
-states[bitwAnd(code, states$code) == 0,]$state
-code <- words[words$word == "goldfish", "code"]
-states[bitwAnd(code, states$code) == 0,]$state
-code <- words[words$word == "jellyfish", "code"]
-states[bitwAnd(code, states$code) == 0,]$state
-code <- words[words$word == "monkfish", "code"]
-states[bitwAnd(code, states$code) == 0,]$state
-
-```
+By definition, a "mackerel" is word which has exactly one state with no shared letters. If there are no shared letters, the bit-wise AND of the state and word codes will be 0; otherwise it'll be some non-zero value. Here's a function that takes a candidate word code, and returns the state name for the word, _if_ the word is a mackerel. Otherwise it returns NA.
 
 ```{r}
 is_mackerel <- function(code) {
@@ -72,10 +117,77 @@ is_mackerel <- function(code) {
   return(NA)
 }
 ```
+
+Time for a sanity check. 
+Is "mackerel" a mackerel? If so, for which state?
+
 ```{r}
-words$mackerel_state <- sapply(words$code, is_mackerel)
-mackerels <- words[!is.na(words$mackerel_state), ]
-head(mackerels)
+test_mackerel <- function(word, code) {
+  state_or_NA <- is_mackerel(code)
+  if (is.na(state_or_NA)) {
+    print(sprintf("'%s' is not a mackerel!", word), quote=F)
+  } else {
+    print(sprintf("'%s' is a mackerel for %s", word, state_or_NA), quote=F)
+  }
+}
+word <- "mackerel"
+test_mackerel(word, encode(word))
+```
+
+And how about a non-mackerel? I'm not sure if there are very many words that have letters in common with _all_ states, but it's pretty easy to find a word with no letters in common with more than one state. How about "the"?
+```{r}
+word <- "the"
+test_mackerel(word, encode(word))
+```
+
+I have three other examples, so I'll try them too:
+```{r}
+word <- "goldfish"
+test_mackerel(word, encode(word))
+
+word <- "jellyfish"
+test_mackerel(word, encode(word))
+
+word <- "monkfish"
+test_mackerel(word, encode(word))
 
 ```
+
+Sanity achieved!
+
+Now I'm ready to find some long mackerels. I'll start with the longest word, and work my way down the list, stopping at the first mackerels. "jellyfish" is the longest mackerel I already know, so I can stop when I reach words of that length.
+```{r}
+for (len in max(words$length):nchar("jellyfish")) {
+  longwords <- words[words$length == len,]
+  if (nrow(longwords) > 0) {
+    longwords$mackerel_state <- sapply(longwords$code, is_mackerel)
+    mackerels <- longwords[!is.na(longwords$mackerel_state), ]
+    if (nrow(mackerels) > 0) {
+      print(mackerels)
+      break;
+    }
+  }
+}
+```
+
+Extra credit: which state has the most mackerels? To answer this I'm going to find the mackerel state for each of the 260,000 words (if any), and then find the state that appears the most times. Running is_mackerel on each word does take a while - an optimization would take advantage of the fact that many words share the same code, and only process unique codes.
+```{r}
+
+words$mackerel_state <- sapply(words$code, is_mackerel)
+mackerels <- words[!is.na(words$mackerel_state), ]
+```
+
+Now I just have to add up the number of times each state is the mackerel state, for all the words. 
+```{r}
+mackerel_count <- mackerels %>% group_by(mackerel_state) %>% summarize(mackerels=n())
+mackerel_count <- mackerel_count[order(mackerel_count$mackerels, decreasing=T),]
+names(mackerel_count) <- c("state", "mackerels")
+# show the unique letter count for each state - I expect shorter states to have more mackerels
+# (letter frequency is also a factor, though)
+mackerel_count$unique_letters <- sapply(strsplit(mackerel_count$state, ""), function(x) length(unique(x)))
+head(mackerel_count)
+
+```
+
+Looks like Ohio is the mackereliest; with only 3 unique letters, maybe it's not surprising.
 
