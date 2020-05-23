@@ -1,0 +1,81 @@
+---
+title: "Fish States"
+author: "Aaron Ferrucci"
+date: "May 22, 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+if (!file.exists("words.csv")) {
+  words <- read.table("https://norvig.com/ngrams/word.list", stringsAsFactors = F)
+  names(words) <- c("word")
+  words$length <- nchar(words$word)
+  write.table(words, "words.csv")
+}
+words <- read.table("words.csv", stringsAsFactors=F)
+words <- words[words$length > 7,]
+words <- words[order(words$length, decreasing=T),]
+str(words)
+```
+
+```{r}
+bitmasks <- sapply(1:26, function(x) 2**(x-1))
+encode <- function(word) {
+  # list of characters
+  chs <- strsplit(word, "")[[1]]
+  # eliminate dups, so we can sum instead of OR
+  chs <- unique(chs)
+  # convert to letter position
+  indices <- match(chs, letters)
+  # whitespace yields NA; drop those
+  indices <- indices[!is.na(indices)]
+  # index to onehot bit mask
+  onehots <- bitmasks[indices]
+  # they're unique, so OR them by adding
+  code <- sum(onehots)
+  return(code)
+} 
+```
+
+```{r}
+words$code <- sapply(words$word, encode)
+```
+
+```{r}
+states <- read.table("states.csv", stringsAsFactors=F, sep="\n")
+names(states) <- c("state")
+states$code <- sapply(states$state, encode)
+```
+
+```{r}
+code <- words[words$word == "mackerel", "code"]
+states[bitwAnd(code, states$code) == 0,]$state
+code <- words[words$word == "goldfish", "code"]
+states[bitwAnd(code, states$code) == 0,]$state
+code <- words[words$word == "jellyfish", "code"]
+states[bitwAnd(code, states$code) == 0,]$state
+code <- words[words$word == "monkfish", "code"]
+states[bitwAnd(code, states$code) == 0,]$state
+
+```
+
+```{r}
+is_mackerel <- function(code) {
+  noshares <- states[bitwAnd(code, states$code) == 0,]
+  if (nrow(noshares) == 1) {
+    return(noshares[1, "state"])
+  }
+  return(NA)
+}
+```
+```{r}
+words$mackerel_state <- sapply(words$code, is_mackerel)
+mackerels <- words[!is.na(words$mackerel_state), ]
+head(mackerels)
+
+```
+
