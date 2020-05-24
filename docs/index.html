@@ -205,12 +205,19 @@ encode &lt;- function(word) {
 <pre class="r"><code>words$code &lt;- sapply(words$word, encode)
 states$code &lt;- sapply(states$state, encode)</code></pre>
 <p>Here’s a function that takes a candidate word code, and returns the state name for the word, <em>if</em> the word is a mackerel. Otherwise it returns NA.</p>
-<pre class="r"><code>is_mackerel &lt;- function(code) {
+<pre class="r"><code>mackerel_query &lt;- function(code) {
   noshares &lt;- states[bitwAnd(code, states$code) == 0,]
-  if (nrow(noshares) == 1) {
-    return(noshares[1, &quot;state&quot;])
+  state &lt;- NA
+  n &lt;- nrow(noshares)
+  if (n == 1) {
+    state &lt;- noshares[1, &quot;state&quot;]
   }
-  return(NA)
+  return(list(state, n))
+}
+
+is_mackerel &lt;- function(code) {
+  results &lt;- mackerel_query(code)
+  return(results[[1]])
 }</code></pre>
 </div>
 <div id="sanity-checks" class="section level3">
@@ -218,18 +225,18 @@ states$code &lt;- sapply(states$state, encode)</code></pre>
 <p>Is “mackerel” a mackerel? If so, for which state?</p>
 <pre class="r"><code>test_mackerel &lt;- function(word) {
   code &lt;- encode(word)
-  state_or_NA &lt;- is_mackerel(code)
-  if (is.na(state_or_NA)) {
-    print(sprintf(&quot;'%s' is not a mackerel!&quot;, word), quote=F)
+  results &lt;- mackerel_query(code)
+  if (is.na(results[[1]])) {
+    print(sprintf(&quot;'%s' is not a mackerel: has no letters in common with %d states.&quot;, word, results[[2]]), quote=F)
   } else {
-    print(sprintf(&quot;'%s' is a mackerel for %s&quot;, word, state_or_NA), quote=F)
+    print(sprintf(&quot;'%s' is a mackerel for %s&quot;, word, results[[1]]), quote=F)
   }
 }
 test_mackerel(&quot;mackerel&quot;)</code></pre>
 <pre><code>## [1] 'mackerel' is a mackerel for ohio</code></pre>
 <p>And how about a non-mackerel? I’m not sure if there are very many words that have letters in common with <em>all</em> states, but it’s pretty easy to find a word with no letters in common with more than one state. How about “the”?</p>
 <pre class="r"><code>test_mackerel(&quot;the&quot;)</code></pre>
-<pre><code>## [1] 'the' is not a mackerel!</code></pre>
+<pre><code>## [1] 'the' is not a mackerel: has no letters in common with 18 states.</code></pre>
 <p>I have three other examples, so I’ll try them too:</p>
 <pre class="r"><code>test_mackerel(&quot;goldfish&quot;)</code></pre>
 <pre><code>## [1] 'goldfish' is a mackerel for kentucky</code></pre>
@@ -260,7 +267,7 @@ test_mackerel(&quot;mackerel&quot;)</code></pre>
 </div>
 <div id="extra-credit" class="section level3">
 <h3>Extra credit</h3>
-<p>Which state has the most mackerels? To answer this I’m going to find all the mackerels among the 260,000 words, keeping track of each mackerel’s state; then I’ll find the state that appears the most times. Running is_mackerel on each word does take a while - an optimization would take advantage of the fact that many words share the same code, and only process unique codes.</p>
+<p>Which state has the most mackerels? To answer this I’m going to find all the mackerels among the 260,000 words, keeping track of each mackerel’s state; then I’ll find the state that appears the most times. Running is_mackerel on each word does take a while - an optimization could take advantage of the fact that many words share the same code, and only process unique codes.</p>
 <pre class="r"><code>words$mackerel_state &lt;- sapply(words$code, is_mackerel)
 mackerels &lt;- words[!is.na(words$mackerel_state), ]</code></pre>
 <p>Now I just have to add up the number of times each state is a mackerel state, for all the words.</p>

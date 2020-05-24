@@ -118,12 +118,19 @@ states$code <- sapply(states$state, encode)
 Here's a function that takes a candidate word code, and returns the state name for the word, _if_ the word is a mackerel. Otherwise it returns NA.
 
 ```{r}
-is_mackerel <- function(code) {
+mackerel_query <- function(code) {
   noshares <- states[bitwAnd(code, states$code) == 0,]
-  if (nrow(noshares) == 1) {
-    return(noshares[1, "state"])
+  state <- NA
+  n <- nrow(noshares)
+  if (n == 1) {
+    state <- noshares[1, "state"]
   }
-  return(NA)
+  return(list(state, n))
+}
+
+is_mackerel <- function(code) {
+  results <- mackerel_query(code)
+  return(results[[1]])
 }
 ```
 
@@ -133,11 +140,11 @@ Is "mackerel" a mackerel? If so, for which state?
 ```{r}
 test_mackerel <- function(word) {
   code <- encode(word)
-  state_or_NA <- is_mackerel(code)
-  if (is.na(state_or_NA)) {
-    print(sprintf("'%s' is not a mackerel!", word), quote=F)
+  results <- mackerel_query(code)
+  if (is.na(results[[1]])) {
+    print(sprintf("'%s' is not a mackerel: has no letters in common with %d states.", word, results[[2]]), quote=F)
   } else {
-    print(sprintf("'%s' is a mackerel for %s", word, state_or_NA), quote=F)
+    print(sprintf("'%s' is a mackerel for %s", word, results[[1]]), quote=F)
   }
 }
 test_mackerel("mackerel")
@@ -176,7 +183,7 @@ for (len in max(words$length):nchar("jellyfish")) {
 That's it, two 23-letter words tie for first place.
 
 ### Extra credit
-Which state has the most mackerels? To answer this I'm going to find all the mackerels among the 260,000 words, keeping track of each mackerel's state; then I'll find the state that appears the most times. Running is_mackerel on each word does take a while - an optimization would take advantage of the fact that many words share the same code, and only process unique codes.
+Which state has the most mackerels? To answer this I'm going to find all the mackerels among the 260,000 words, keeping track of each mackerel's state; then I'll find the state that appears the most times. Running is_mackerel on each word does take a while - an optimization could take advantage of the fact that many words share the same code, and only process unique codes.
 
 ```{r}
 words$mackerel_state <- sapply(words$code, is_mackerel)
