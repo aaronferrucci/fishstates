@@ -131,7 +131,8 @@ is_mackerel <- function(code) {
 Is "mackerel" a mackerel? If so, for which state?
 
 ```{r}
-test_mackerel <- function(word, code) {
+test_mackerel <- function(word) {
+  code <- encode(word)
   state_or_NA <- is_mackerel(code)
   if (is.na(state_or_NA)) {
     print(sprintf("'%s' is not a mackerel!", word), quote=F)
@@ -139,27 +140,19 @@ test_mackerel <- function(word, code) {
     print(sprintf("'%s' is a mackerel for %s", word, state_or_NA), quote=F)
   }
 }
-word <- "mackerel"
-test_mackerel(word, encode(word))
+test_mackerel("mackerel")
 ```
 
 And how about a non-mackerel? I'm not sure if there are very many words that have letters in common with _all_ states, but it's pretty easy to find a word with no letters in common with more than one state. How about "the"?
 ```{r}
-word <- "the"
-test_mackerel(word, encode(word))
+test_mackerel("the")
 ```
 
 I have three other examples, so I'll try them too:
 ```{r}
-word <- "goldfish"
-test_mackerel(word, encode(word))
-
-word <- "jellyfish"
-test_mackerel(word, encode(word))
-
-word <- "monkfish"
-test_mackerel(word, encode(word))
-
+test_mackerel("goldfish")
+test_mackerel("jellyfish")
+test_mackerel("monkfish")
 ```
 
 Sanity achieved!
@@ -237,4 +230,8 @@ ggplot() +
     axis.ticks.y=element_blank()
   )
 ```
+
+Source code is [here](https://github.com/aaronferrucci/fishstates)
+
+Github hosting is [here](https://aaronferrucci.github.io/fishstates/)
 
