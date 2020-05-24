@@ -12,6 +12,8 @@ knit: (function(input_file, encoding) {
 
 ```{r message=F, warning=F, echo=F}
 library(dplyr)
+library(usmap)
+library(ggplot2)
 ```
 
 From [538 Riddler: Can You Find The Fish In State Names?](https://fivethirtyeight.com/features/somethings-fishy-in-the-state-of-the-riddler/)
@@ -40,6 +42,12 @@ From [538 Riddler: Can You Find The Fish In State Names?](https://fivethirtyeigh
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+## Answers first!
+1. The longest mackerels is... well, there are two, at 23 letters: "counterproductivenesses" for Alabama, "hydrochlorofluorocarbon" for Mississippi.
+2. Extra credit: Ohio has the most mackerels: 11,342 of them.
+
+## Showing the work
+### Data capturing, processing, caching
 First things first: I'll grab Peter Norvig's word list and derive some useful information from it. I don't want to hammer norvig.com too much during development, so I'll cache the word list locally.
 
 ```{r}
@@ -67,7 +75,8 @@ names(states) <- c("state")
 str(states)
 ```
 
-Now for some coding. I'll be asking this question: "does word W have any letters in common with state S?". For example, "mackerel" has no letters in common with "ohio", but it has letters in common with maine, michigan, montana... and every other state. I'll take advantage of the fact that repeated letters, and letter order don't matter - that is, "does 'aceklmr' have any letters in common with 'hio'?" is really the same question. For common-letter testing, I'll encode each word and state as a vector of 26 bits, with '1' meaning "letter is present". Then I can use bitwise AND to detect common letters. If the compiler is smart, these operations should be efficient.
+### Encoding the Codes
+I'll be asking this question: "does word W have any letters in common with state S?". For example, "mackerel" has no letters in common with "ohio", but it has letters in common with maine, michigan, montana... and every other state. I'll take advantage of the fact that repeated letters, and letter order don't matter - that is, "does 'mackerel' have any letters in common with 'ohio'?" and "does 'aceklmr' have any letters in common with 'hio'?" are really the same question. I'll encode each word and state as a vector of 26 bits, with '1' meaning "letter is present". Then I'll bitwise-AND a word and a state code; iff there are no letters in common, the result is 0. If the compiler is smart, these bitwise operations should be efficient.
 
 Here's a utility function to encode a string of letters.
 
@@ -106,7 +115,7 @@ words$code <- sapply(words$word, encode)
 states$code <- sapply(states$state, encode)
 ```
 
-By definition, a "mackerel" is word which has exactly one state with no shared letters. If there are no shared letters, the bit-wise AND of the state and word codes will be 0; otherwise it'll be some non-zero value. Here's a function that takes a candidate word code, and returns the state name for the word, _if_ the word is a mackerel. Otherwise it returns NA.
+Here's a function that takes a candidate word code, and returns the state name for the word, _if_ the word is a mackerel. Otherwise it returns NA.
 
 ```{r}
 is_mackerel <- function(code) {
@@ -118,7 +127,7 @@ is_mackerel <- function(code) {
 }
 ```
 
-Time for a sanity check. 
+### Sanity Checks 
 Is "mackerel" a mackerel? If so, for which state?
 
 ```{r}
@@ -155,7 +164,9 @@ test_mackerel(word, encode(word))
 
 Sanity achieved!
 
-Now I'm ready to find some long mackerels. I'll start with the longest word, and work my way down the list, stopping at the first mackerels. "jellyfish" is the longest mackerel I already know, so I can stop when I reach words of that length.
+### Find Some Longest Mackerels
+I'll start with the longest word(s), and work my way down the list, stopping at the first mackerels. "jellyfish" is the longest mackerel I already know, so I can stop when I reach words of that length.
+
 ```{r}
 for (len in max(words$length):nchar("jellyfish")) {
   longwords <- words[words$length == len,]
@@ -169,25 +180,61 @@ for (len in max(words$length):nchar("jellyfish")) {
   }
 }
 ```
+That's it, two 23-letter words tie for first place.
 
-Extra credit: which state has the most mackerels? To answer this I'm going to find the mackerel state for each of the 260,000 words (if any), and then find the state that appears the most times. Running is_mackerel on each word does take a while - an optimization would take advantage of the fact that many words share the same code, and only process unique codes.
+### Extra credit
+Which state has the most mackerels? To answer this I'm going to find all the mackerels among the 260,000 words, keeping track of each mackerel's state; then I'll find the state that appears the most times. Running is_mackerel on each word does take a while - an optimization would take advantage of the fact that many words share the same code, and only process unique codes.
+
 ```{r}
-
 words$mackerel_state <- sapply(words$code, is_mackerel)
 mackerels <- words[!is.na(words$mackerel_state), ]
 ```
 
-Now I just have to add up the number of times each state is the mackerel state, for all the words. 
+Now I just have to add up the number of times each state is a mackerel state, for all the words. 
 ```{r}
 mackerel_count <- mackerels %>% group_by(mackerel_state) %>% summarize(mackerels=n())
 mackerel_count <- mackerel_count[order(mackerel_count$mackerels, decreasing=T),]
 names(mackerel_count) <- c("state", "mackerels")
-# show the unique letter count for each state - I expect shorter states to have more mackerels
-# (letter frequency is also a factor, though)
-mackerel_count$unique_letters <- sapply(strsplit(mackerel_count$state, ""), function(x) length(unique(x)))
-head(mackerel_count)
-
+head(mackerel_count, n=10)
 ```
 
 Looks like Ohio is the mackereliest; with only 3 unique letters, maybe it's not surprising.
+
+### A Few Misguided Plots
+There's quite a range of mackerel counts among the states, so I'll put them on a log scale.
+
+```{r}
+mackerel_count$fstate <- factor(mackerel_count$state, levels=mackerel_count$state[order(mackerel_count$mackerels, decreasing=T)])
+ggplot(mackerel_count, aes(x=fstate, y=log10(mackerels))) +
+  ggtitle("Ohio Is The Mackereliest") +
+  geom_bar(stat="identity") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+This seems like a terrible application for a map graph (choropleth), since the data has nothing to do with geographical position. Let's do it! I'm giving Ohio a tasteful red border, to help it stand out from the crowd.
+
+```{r}
+map <- usmap::us_map()
+# change the 'full' column to lowercase 'state'
+map$state <- tolower(map$full)
+map <- subset(map, select=-full)
+map <- subset(map, select=-abbr)
+map <- left_join(map, mackerel_count, by="state")
+# states with no mackerels were not present in mackerel_count, so
+# are NA in the joined dataframe. Set those NAs to 1 (not 0, because
+# I'm going to plot on a log scale).
+map$mackerels <- ifelse(is.na(map$mackerels), 1, map$mackerels)
+ggplot() + 
+  geom_polygon(data=map, aes(x=x, y=y, group=group, fill=log10(mackerels))) +
+  geom_polygon(data=map[map$state == "ohio",], aes(x=x, y=y, group=group, fill=log10(mackerels)), color="red") +
+  ggtitle("Ohio Is The Mackereliest") +
+  theme(
+    axis.title.x=element_blank(),
+    axis.text.x=element_blank(),
+    axis.ticks.x=element_blank(),
+    axis.title.y=element_blank(),
+    axis.text.y=element_blank(),
+    axis.ticks.y=element_blank()
+  )
+```
 
