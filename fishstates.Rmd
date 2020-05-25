@@ -19,23 +19,23 @@ library(ggplot2)
 From [538 Riddler: Can You Find The Fish In State Names?](https://fivethirtyeight.com/features/somethings-fishy-in-the-state-of-the-riddler/)
 
 > From Mark Bradwin comes a fishy puzzle about state names:
-> 
-> Ohio is the only state whose name doesn’t share any letters with the 
+>
+> Ohio is the only state whose name doesn’t share any letters with the
 > word “mackerel.” It’s strange, but it’s true.
-> 
-> But that isn’t the only pairing of a state and a word you can say that 
+>
+> But that isn’t the only pairing of a state and a word you can say that
 > about — it’s not even the only fish! Kentucky has “goldfish” to itself,
 > Montana has “jellyfish” and Delaware has “monkfish,” just to name a few.
-> 
-> What is the longest “mackerel?” That is, what is the longest word that 
-> doesn’t share any letters with exactly one state? (If multiple “mackerels” 
+>
+> What is the longest “mackerel?” That is, what is the longest word that
+> doesn’t share any letters with exactly one state? (If multiple “mackerels”
 > are tied for being the longest, can you find them all?)
-> 
-> Extra credit: Which state has the most “mackerels?” That is, which state 
-> has the most words for which it is the only state without any letters 
+>
+> Extra credit: Which state has the most “mackerels?” That is, which state
+> has the most words for which it is the only state without any letters
 > in common with those words?
-> 
-> (For both the Riddler and the extra credit, please refer to Friend of 
+>
+> (For both the Riddler and the extra credit, please refer to Friend of
 > the Riddler™ Peter Norvig’s [word list](https://norvig.com/ngrams/word.list).)
 
 ```{r setup, include=FALSE}
@@ -55,8 +55,8 @@ if (!file.exists("words.csv")) {
   words <- read.table("https://norvig.com/ngrams/word.list", stringsAsFactors = F)
   names(words) <- c("word")
   words$length <- nchar(words$word)
-  # For an optimization, I could throw away words shorter than "mackerel", but... 
-  # I need them for the extra credit question. 
+  # For an optimization, I could throw away words shorter than "mackerel", but...
+  # I need them for the extra credit question.
 
   # The words are in alphabetical order; sort by length instead.
   words <- words[order(words$length, decreasing=T),]
@@ -105,7 +105,7 @@ encode <- function(word) {
   code <- sum(onehots)
   # a sum of integers might exceed integer range - but I know it won't. Cast to int for efficiency.
   return(as.integer(code))
-} 
+}
 ```
 
 Now I'll augment my data sets with encodings for each word and state. With around 260,000 words in the list, I worried that this step would be very time consuming, but it only takes a few seconds.
@@ -134,7 +134,7 @@ is_mackerel <- function(code) {
 }
 ```
 
-### Sanity Checks 
+### Sanity Checks
 Is "mackerel" a mackerel? If so, for which state?
 
 ```{r}
@@ -190,7 +190,7 @@ words$mackerel_state <- sapply(words$code, is_mackerel)
 mackerels <- words[!is.na(words$mackerel_state), ]
 ```
 
-Now I just have to add up the number of times each state is a mackerel state, for all the words. 
+Now I just have to add up the number of times each state is a mackerel state, for all the words.
 ```{r}
 mackerel_count <- mackerels %>% group_by(mackerel_state) %>% summarize(mackerels=n())
 mackerel_count <- mackerel_count[order(mackerel_count$mackerels, decreasing=T),]
@@ -224,7 +224,7 @@ map <- left_join(map, mackerel_count, by="state")
 # are NA in the joined dataframe. Set those NAs to 1 (not 0, because
 # I'm going to plot on a log scale).
 map$mackerels <- ifelse(is.na(map$mackerels), 1, map$mackerels)
-ggplot() + 
+ggplot() +
   geom_polygon(data=map, aes(x=x, y=y, group=group, fill=log10(mackerels))) +
   geom_polygon(data=map[map$state == "ohio",], aes(x=x, y=y, group=group, fill=log10(mackerels)), color="red") +
   ggtitle("Ohio Is The Mackereliest") +
@@ -236,6 +236,52 @@ ggplot() +
     axis.text.y=element_blank(),
     axis.ticks.y=element_blank()
   )
+```
+
+### A Generalization of Mackerels
+A mackerel is a word for which exactly 1 state shares 0 letters. Of the `r nrow(words)` words in Peter Norvig's list, only `r nrow(words[!is.na(words$mackerel),])` are mackerels. What about the rest? There might be some words which share 0 letters with no states, or 3 states, or 18 states (as I saw above with "the"). I'll declare a word's "M" number to be the number of non-sharing states. For "mackerel", M is 1; for "the" M is 18.
+
+I'll add the M value to each word in my dictionary:
+```{r}
+words$M <- sapply(words$code, function(c) mackerel_query(c)[[2]])
+```
+
+It might also be interesting to look at the number of unique letters in a word. I'll group the words into bins which have the same values for: unique letter count, word length, M value, and count the number of words in each bin.
+
+```{r}
+words$uniq <- sapply(words$word, function(w) { chs <- strsplit(w, "")[[1]] ; length(unique(chs))} )
+
+# group all the words into bins of same (uniq, M, Length);
+# count the size of each bin and put that in new column 'n';
+# sort by decreasing n, so small bubbles don't hide behind big bubbles in the plot.
+w2 <- words %>% group_by(uniq, M, length) %>% summarize(n=n()) %>% arrange(desc(n))
+ggplot(w2, aes(M, uniq, size=n, color=log(length))) +
+  geom_point(alpha=1.0, position="jitter") +
+  scale_size(range = c(.1, 5))
+```
+
+Interpretation: it's messy! But I can see that low M numbers - 0 to 3 or so - cluster where words are long, and unique letters in a word are around 6 to 9. There are an interesting outlier with 16 unique letters (position="jitter" might place the point not-quite-at 16).
+
+```{r}
+words[words$uniq == max(words$uniq),]
+```
+
+On the other end of the graph, there's a word with M value near 50.
+```{r}
+maximalM <- words[words$M == max(words$M), "word"]
+maximalM
+```
+
+I didn't know 'zzz' was a word! Its M value is 49 - meaning it has 0 letters in common with 49 out of 50 states. Which state does it have a letter in common with?
+```{r}
+letter <- unique(strsplit(maximalM, "")[[1]])
+for (state in states$state) {
+  letters <- strsplit(state, "")[[1]]
+  if (!is.na(any(match(letters, letter)))) {
+    print(sprintf("%s is the only state with a '%s'", state, letter))
+    break;
+  }
+}
 ```
 
 Source code is [here](https://github.com/aaronferrucci/fishstates)
