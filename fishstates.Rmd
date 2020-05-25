@@ -45,6 +45,10 @@ knitr::opts_chunk$set(echo = TRUE)
 ## Answers first!
 1. The longest mackerels is... well, there are two, at 23 letters: "counterproductivenesses" for Alabama, "hydrochlorofluorocarbon" for Mississippi.
 2. Extra credit: Ohio has the most mackerels: 11,342 of them.
+3. ... and a few fun facts:
+    a. the word with the largest number of unique letters shares a letter with every state
+    b. there exists a word which shares no letters with all but one state
+    c. there are 18 states which have no mackerels.
 
 ## Showing the work
 ### Data capturing, processing, caching
@@ -108,14 +112,18 @@ encode <- function(word) {
 }
 ```
 
-Now I'll augment my data sets with encodings for each word and state. With around 260,000 words in the list, I worried that this step would be very time consuming, but it only takes a few seconds.
+Now I'll augment my data sets with encodings for each word and state. With around 260,000 words in the word list, I worried that this step would be very time consuming, but it only takes a few seconds.
 
 ```{r}
 words$code <- sapply(words$word, encode)
 states$code <- sapply(states$state, encode)
 ```
 
-Here's a function that takes a candidate word code, and returns the state name for the word, _if_ the word is a mackerel. Otherwise it returns NA.
+Here's a function that takes a candidate word code, and returns the number of 
+states that the word has 0 letters in common with. If that number is 1, meaning
+the word is a mackerel, the function returns the state name for the word also.
+In case you only care about state names for mackerels, there's a helper
+function that just returns mackerel state names or NA.
 
 ```{r}
 mackerel_query <- function(code) {
@@ -150,7 +158,7 @@ test_mackerel <- function(word) {
 test_mackerel("mackerel")
 ```
 
-And how about a non-mackerel? I'm not sure if there are very many words that have letters in common with _all_ states, but it's pretty easy to find a word with no letters in common with more than one state. How about "the"?
+And how about a non-mackerel? It's pretty easy to find a word with no letters in common with more than one state. How about "the"?
 ```{r}
 test_mackerel("the")
 ```
@@ -165,7 +173,8 @@ test_mackerel("monkfish")
 Sanity achieved!
 
 ### Find Some Longest Mackerels
-I'll start with the longest word(s), and work my way down the list, stopping at the first mackerels. "jellyfish" is the longest mackerel I already know, so I can stop when I reach words of that length.
+I'll start with the longest word(s), and work my way down the list, stopping at the first mackerels. I won't need to search below the length of "jellyfish", 
+since that's a known mackerel.
 
 ```{r}
 for (len in max(words$length):nchar("jellyfish")) {
@@ -206,9 +215,18 @@ There's quite a range of mackerel counts among the states, so I'll put them on a
 ```{r}
 mackerel_count$fstate <- factor(mackerel_count$state, levels=mackerel_count$state[order(mackerel_count$mackerels, decreasing=T)])
 ggplot(mackerel_count, aes(x=fstate, y=log10(mackerels))) +
+  xlab("state") +
   ggtitle("Ohio Is The Mackereliest") +
   geom_bar(stat="identity") +
   theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+```{r}
+no_mackerels <- states[!states$state %in% mackerel_count$state,]
+```
+
+Not all states appear in this graph! Here are the `r nrow(no_mackerels)` states which have no mackerels:
+```{r}
+print(no_mackerels$state)
 ```
 
 This seems like a terrible application for a map graph (choropleth), since the data has nothing to do with geographical position. Let's do it! I'm giving Ohio a tasteful red border, to help it stand out from the crowd.
@@ -246,7 +264,7 @@ I'll add the M value to each word in my dictionary:
 words$M <- sapply(words$code, function(c) mackerel_query(c)[[2]])
 ```
 
-It might also be interesting to look at the number of unique letters in a word. I'll group the words into bins which have the same values for: unique letter count, word length, M value, and count the number of words in each bin.
+It might also be interesting to look at the number of unique letters in a word. I'll group the words into bins which have the same values for these three traits: unique letter count, word length, M. I'll plot the word bins in a bubble chart, with bubble size indicating "n", the number of words in the bin.
 
 ```{r}
 words$uniq <- sapply(words$word, function(w) { chs <- strsplit(w, "")[[1]] ; length(unique(chs))} )
@@ -257,14 +275,18 @@ words$uniq <- sapply(words$word, function(w) { chs <- strsplit(w, "")[[1]] ; len
 w2 <- words %>% group_by(uniq, M, length) %>% summarize(n=n()) %>% arrange(desc(n))
 ggplot(w2, aes(M, uniq, size=n, color=log(length))) +
   geom_point(alpha=1.0, position="jitter") +
-  scale_size(range = c(.1, 5))
+  scale_size(range = c(.1, 5), breaks=c(1, 1000, 5000, 7000))
 ```
 
-Interpretation: it's messy! But I can see that low M numbers - 0 to 3 or so - cluster where words are long, and unique letters in a word are around 6 to 9. There are an interesting outlier with 16 unique letters (position="jitter" might place the point not-quite-at 16).
+Interpretation: it's messy! But I can see that low M numbers - 0 to 3 or so - cluster where words are long, and unique letters in a word are around 6 to 9.
+
+There is an outlier with 16 unique letters (position="jitter" might place the point not-quite-at uniq=16).
 
 ```{r}
 words[words$uniq == max(words$uniq),]
 ```
+
+"phenylthiocarbamides" shares a letter with every state!
 
 On the other end of the graph, there's a word with M value near 50.
 ```{r}
@@ -272,7 +294,7 @@ maximalM <- words[words$M == max(words$M), "word"]
 maximalM
 ```
 
-I didn't know 'zzz' was a word! Its M value is 49 - meaning it has 0 letters in common with 49 out of 50 states. Which state does it have a letter in common with?
+I didn't know 'zzz' was a word! M is 49 - meaning 'zzz' has 0 letters in common with 49 out of 50 states. Which state does it have a letter in common with?
 ```{r}
 letter <- unique(strsplit(maximalM, "")[[1]])
 for (state in states$state) {
